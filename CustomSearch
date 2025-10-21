@@ -5,306 +5,235 @@ Function CustomSearch(searchValue As Variant, searchColumn As Range, resultColum
                       Optional ignoreCharsAndSpaces As Boolean = False, Optional ignoreCase As Boolean = False, _
                       Optional includeKey As Boolean = False, _
                       Optional transposeResult As Boolean = False) As Variant
-    ' Custom Search Function
+    ' Optimized Custom Search Function
 
-    Dim currentPrecision As Integer
-    Dim searchArray As Variant
-    Dim resultArray As Variant
-    Dim rowCount As Long
+    Dim searchArray As Variant, resultArray As Variant
+    Dim rowCount As Long, colCount As Long
     Dim i As Long, j As Long
-    Dim processedSearchValue As String
-    Dim processedSearchCell As String
+    Dim processedSearchValue As String, processedSearchCell As String
     Dim regex As Object
-    Dim matchCount As Integer
-    Dim matches As Collection
-    Dim validMatchesCount As Integer
+    Dim matchCount As Long, validMatchesCount As Long
     Dim lastRow As Long
     Dim matchArray() As Variant
+    Dim tempMatches() As Variant  ' Ìàññèâ âìåñòî Collection äëÿ ñêîðîñòè
+    Dim maxMatches As Long
+    Dim currentPrecision As Long
+    Dim isFullMatch As Boolean
+    Dim compareLength As Long
 
-    On Error GoTo ErrorHandler ' Error Handling
+    On Error GoTo ErrorHandler
 
-    ' Validate input parameters
+    ' Validate input parameters (îáúåäèíåíî äëÿ ñêîðîñòè)
     If searchColumn.Columns.Count > 1 Then
         CustomSearch = "Error: searchColumn must be a single column."
         Exit Function
     End If
-    If searchColumn.Rows.Count <> resultColumn.Rows.Count Then
-        CustomSearch = "Error: searchColumn and resultColumn must have the same number of rows."
+    If searchColumn.Rows.Count <> resultColumn.Rows.Count Or searchColumn.Row <> resultColumn.Row Then
+        CustomSearch = "Error: searchColumn and resultColumn must have the same number of rows and start from the same row."
         Exit Function
     End If
-    If searchColumn.Row <> resultColumn.Row Then
-        CustomSearch = "Error: searchColumn and resultColumn must start from the same row."
+    If occurrence < 0 Or skipCount < 0 Then
+        CustomSearch = "Error: occurrence and skipCount must be non-negative integers."
         Exit Function
     End If
-    If occurrence < 0 Then
-        CustomSearch = "Error: occurrence must be a non-negative integer."
-        Exit Function
-    End If
-    If skipCount < 0 Then
-        CustomSearch = "Error: skipCount must be a non-negative integer."
-        Exit Function
-    End If
-    If (multiLine <> 0) And (multiLine <> 1) And (multiLine <> 2) And (multiLine <> 3) Then
+    If multiLine < 0 Or multiLine > 3 Then
         CustomSearch = "Error: multiLine must be 0, 1, 2, or 3."
         Exit Function
     End If
 
-    ' Set exact match checking for charLimit = 0 (full string match)
-    If charLimit = 0 Then
-        currentPrecision = Len(searchValue) ' Full string match
+    ' Îïðåäåëÿåì ðåæèì ïîèñêà
+    isFullMatch = (charLimit = 0)
+    If isFullMatch Then
+        currentPrecision = Len(searchValue)
     Else
         currentPrecision = charLimit
     End If
 
-    ' Initialize valid matches count
-    validMatchesCount = 0
-
-    ' Проверяем, является ли указанный диапазон столбцом или конкретным диапазоном
+    ' Îïðåäåëÿåì äèàïàçîí äàííûõ
     If searchColumn.Rows.Count = searchColumn.Worksheet.Rows.Count Then
-        ' Если передан целый столбец, находим последний заполненный ряд
         lastRow = searchColumn.Cells(searchColumn.Rows.Count, 1).End(xlUp).Row
-        ' Загружаем данные в массивы
         searchArray = searchColumn.Resize(lastRow).Value
         resultArray = resultColumn.Resize(lastRow, resultColumn.Columns.Count).Value
         rowCount = lastRow
     Else
-        ' Если передан конкретный диапазон, используем его размер
         rowCount = searchColumn.Rows.Count
-        ' Загружаем данные в массивы
         searchArray = searchColumn.Value
         resultArray = resultColumn.Resize(rowCount, resultColumn.Columns.Count).Value
     End If
 
-    ' Create RegExp object for character filtering
-    Set regex = CreateObject("VBScript.RegExp")
-    regex.Global = True
-    regex.ignoreCase = True
-    regex.Pattern = "[^a-zA-Z0-9]"
+    colCount = resultColumn.Columns.Count
 
-    ' Preprocess searchValue
+    ' Ñîçäàåì RegExp òîëüêî åñëè íóæíî
     If ignoreCharsAndSpaces Then
+        Set regex = CreateObject("VBScript.RegExp")
+        regex.Global = True
+        regex.ignoreCase = True
+        regex.Pattern = "[^a-zA-Z0-9]"
         processedSearchValue = regex.Replace(CStr(searchValue), "")
     Else
         processedSearchValue = CStr(searchValue)
     End If
 
-    If ignoreCase Then
-        processedSearchValue = LCase(processedSearchValue)
-    End If
+    If ignoreCase Then processedSearchValue = LCase(processedSearchValue)
+    compareLength = Len(processedSearchValue)
 
-    ' Initialize match counter and matches collection
+    ' Èíèöèàëèçàöèÿ âðåìåííîãî ìàññèâà (èñïîëüçóåì ìàññèâ âìåñòî Collection)
+    maxMatches = IIf(occurrence > 0, occurrence, 1000) ' Íà÷àëüíûé ðàçìåð
+    ReDim tempMatches(1 To maxMatches, 1 To colCount + 1) ' +1 äëÿ êëþ÷à
+    
     matchCount = 0
-    Set matches = New Collection
+    validMatchesCount = 0
 
-    ' Iterate over searchColumn and look for matches
+    ' Îñíîâíîé öèêë ïîèñêà
     For i = 1 To rowCount
-        ' Preprocess the current cell value
+        ' Ïðåäîáðàáîòêà çíà÷åíèÿ ÿ÷åéêè
         If ignoreCharsAndSpaces Then
             processedSearchCell = regex.Replace(CStr(searchArray(i, 1)), "")
         Else
             processedSearchCell = CStr(searchArray(i, 1))
         End If
 
-        If ignoreCase Then
-            processedSearchCell = LCase(processedSearchCell)
-        End If
+        If ignoreCase Then processedSearchCell = LCase(processedSearchCell)
 
-        ' Check for exact match if charLimit = 0
-        If charLimit = 0 Then
-            If processedSearchCell = processedSearchValue Then
-                matchCount = matchCount + 1
-
-                ' Skip matches according to skipCount
-                If matchCount <= skipCount Then GoTo ContinueLoop
-
-                ' Collect matches
-                validMatchesCount = validMatchesCount + 1
-                If resultColumn.Columns.Count > 1 Then
-                    ReDim rowMatch(1 To resultColumn.Columns.Count)
-                    For j = 1 To resultColumn.Columns.Count
-                        If IsEmpty(resultArray(i, j)) Then
-                            rowMatch(j) = "" ' Treat empty cells as empty strings
-                        Else
-                            rowMatch(j) = resultArray(i, j)
-                        End If
-                    Next j
-                    If includeKey Then
-                        matches.Add Array(searchArray(i, 1), rowMatch)
-                    Else
-                        matches.Add Array("", rowMatch)
-                    End If
-                Else
-                    If IsEmpty(resultArray(i, 1)) Then
-                        If includeKey Then
-                            matches.Add Array(searchArray(i, 1), "")
-                        Else
-                            matches.Add Array("", "")
-                        End If
-                    Else
-                        If includeKey Then
-                            matches.Add Array(searchArray(i, 1), resultArray(i, 1))
-                        Else
-                            matches.Add Array("", resultArray(i, 1))
-                        End If
-                    End If
-                End If
-
-                ' Check if the required occurrence is met
-                If occurrence > 0 And validMatchesCount = occurrence Then Exit For
-            End If
+        ' Ïðîâåðêà ñîâïàäåíèÿ (îïòèìèçèðîâàíî)
+        Dim isMatch As Boolean
+        If isFullMatch Then
+            isMatch = (processedSearchCell = processedSearchValue)
         Else
-            ' Check for partial match with current precision
-            If Left(processedSearchCell, currentPrecision) = Left(processedSearchValue, currentPrecision) Then
-                matchCount = matchCount + 1
-
-                ' Skip matches according to skipCount
-                If matchCount <= skipCount Then GoTo ContinueLoop
-
-                ' Collect matches
-                validMatchesCount = validMatchesCount + 1
-                If resultColumn.Columns.Count > 1 Then
-                    ReDim rowMatch(1 To resultColumn.Columns.Count)
-                    For j = 1 To resultColumn.Columns.Count
-                        If IsEmpty(resultArray(i, j)) Then
-                            rowMatch(j) = "" ' Treat empty cells as empty strings
-                        Else
-                            rowMatch(j) = resultArray(i, j)
-                        End If
-                    Next j
-                    If includeKey Then
-                        matches.Add Array(searchArray(i, 1), rowMatch)
-                    Else
-                        matches.Add Array("", rowMatch)
-                    End If
-                Else
-                    If IsEmpty(resultArray(i, 1)) Then
-                        If includeKey Then
-                            matches.Add Array(searchArray(i, 1), "")
-                        Else
-                            matches.Add Array("", "")
-                        End If
-                    Else
-                        If includeKey Then
-                            matches.Add Array(searchArray(i, 1), resultArray(i, 1))
-                        Else
-                            matches.Add Array("", resultArray(i, 1))
-                        End If
-                    End If
-                End If
-
-                ' Check if the required occurrence is met
-                If occurrence > 0 And validMatchesCount = occurrence Then Exit For
+            ' Ïðîâåðÿåì äëèíó ïåðåä Left äëÿ ñêîðîñòè
+            If Len(processedSearchCell) >= currentPrecision And compareLength >= currentPrecision Then
+                isMatch = (Left(processedSearchCell, currentPrecision) = Left(processedSearchValue, currentPrecision))
+            Else
+                isMatch = False
             End If
         End If
 
-ContinueLoop:
+        If isMatch Then
+            matchCount = matchCount + 1
+            
+            If matchCount > skipCount Then
+                validMatchesCount = validMatchesCount + 1
+                
+                ' Ðàñøèðÿåì ìàññèâ ïðè íåîáõîäèìîñòè
+                If validMatchesCount > maxMatches Then
+                    maxMatches = maxMatches + 1000
+                    ReDim Preserve tempMatches(1 To maxMatches, 1 To colCount + 1)
+                End If
+                
+                ' Ñîõðàíÿåì êëþ÷ åñëè íóæíî
+                If includeKey Then
+                    tempMatches(validMatchesCount, 1) = searchArray(i, 1)
+                End If
+                
+                ' Ñîõðàíÿåì ðåçóëüòàòû
+                If colCount > 1 Then
+                    For j = 1 To colCount
+                        tempMatches(validMatchesCount, j + 1) = IIf(IsEmpty(resultArray(i, j)), "", resultArray(i, j))
+                    Next j
+                Else
+                    tempMatches(validMatchesCount, 2) = IIf(IsEmpty(resultArray(i, 1)), "", resultArray(i, 1))
+                End If
+
+                ' Âûõîä åñëè äîñòèãíóòî íóæíîå êîëè÷åñòâî
+                If occurrence > 0 And validMatchesCount = occurrence Then Exit For
+            End If
+        End If
     Next i
 
-    ' Форматирование вывода на основе multiLine
-    If matches.Count > 0 Then
+    ' Ôîðìàòèðîâàíèå âûâîäà
+    If validMatchesCount > 0 Then
         Select Case multiLine
-            Case 0 ' Вывод в табличном формате
-                If resultColumn.Columns.Count > 1 Then
-                    ' Вывод нескольких колонок
-                    If includeKey Then
-                        ReDim matchArray(1 To matches.Count, 1 To resultColumn.Columns.Count + 1)
-                        For i = 1 To matches.Count
-                            matchArray(i, 1) = matches(i)(0) ' Ключ
-                            For j = 1 To resultColumn.Columns.Count
-                                matchArray(i, j + 1) = matches(i)(1)(j)
-                            Next j
-                        Next i
-                    Else
-                        ReDim matchArray(1 To matches.Count, 1 To resultColumn.Columns.Count)
-                        For i = 1 To matches.Count
-                            For j = 1 To resultColumn.Columns.Count
-                                matchArray(i, j) = matches(i)(1)(j)
-                            Next j
-                        Next i
-                    End If
+            Case 0 ' Òàáëè÷íûé ôîðìàò
+                If includeKey Then
+                    ReDim matchArray(1 To validMatchesCount, 1 To colCount + 1)
+                    For i = 1 To validMatchesCount
+                        matchArray(i, 1) = tempMatches(i, 1)
+                        For j = 1 To colCount
+                            matchArray(i, j + 1) = tempMatches(i, j + 1)
+                        Next j
+                    Next i
                 Else
-                    ' Вывод одной колонки
+                    ReDim matchArray(1 To validMatchesCount, 1 To colCount)
+                    For i = 1 To validMatchesCount
+                        For j = 1 To colCount
+                            matchArray(i, j) = tempMatches(i, j + 1)
+                        Next j
+                    Next i
+                End If
+
+            Case 1 ' Îäíà êîëîíêà
+                ReDim matchArray(1 To validMatchesCount, 1 To 1)
+                For i = 1 To validMatchesCount
+                    Dim rowValues As String
+                    If colCount > 1 Then
+                        Dim vals() As String
+                        ReDim vals(1 To colCount)
+                        For j = 1 To colCount
+                            vals(j) = CStr(tempMatches(i, j + 1))
+                        Next j
+                        rowValues = Join(vals, ", ")
+                    Else
+                        rowValues = CStr(tempMatches(i, 2))
+                    End If
+                    
                     If includeKey Then
-                        ReDim matchArray(1 To matches.Count, 1 To 2)
-                        For i = 1 To matches.Count
-                            matchArray(i, 1) = matches(i)(0) ' Ключ
-                            matchArray(i, 2) = matches(i)(1)
-                        Next i
+                        matchArray(i, 1) = tempMatches(i, 1) & ": " & rowValues
                     Else
-                        ReDim matchArray(1 To matches.Count, 1 To 1)
-                        For i = 1 To matches.Count
-                            matchArray(i, 1) = matches(i)(1)
-                        Next i
-                    End If
-                End If
-
-            Case 1 ' Вывод в одну колонку
-                ReDim matchArray(1 To matches.Count, 1 To 1)
-                For i = 1 To matches.Count
-                    If resultColumn.Columns.Count > 1 Then
-                        If includeKey Then
-                            matchArray(i, 1) = matches(i)(0) & ": " & Join(matches(i)(1), ", ")
-                        Else
-                            matchArray(i, 1) = Join(matches(i)(1), ", ")
-                        End If
-                    Else
-                        If includeKey Then
-                            matchArray(i, 1) = matches(i)(0) & ": " & matches(i)(1)
-                        Else
-                            matchArray(i, 1) = matches(i)(1)
-                        End If
+                        matchArray(i, 1) = rowValues
                     End If
                 Next i
 
-            Case 2 ' Вывод в одну строку
-                ReDim matchArray(1 To 1, 1 To matches.Count)
-                For i = 1 To matches.Count
-                    If resultColumn.Columns.Count > 1 Then
-                        If includeKey Then
-                            matchArray(1, i) = matches(i)(0) & ": " & Join(matches(i)(1), ", ")
-                        Else
-                            matchArray(1, i) = Join(matches(i)(1), ", ")
-                        End If
+            Case 2 ' Îäíà ñòðîêà
+                ReDim matchArray(1 To 1, 1 To validMatchesCount)
+                For i = 1 To validMatchesCount
+                    If colCount > 1 Then
+                        ReDim vals(1 To colCount)
+                        For j = 1 To colCount
+                            vals(j) = CStr(tempMatches(i, j + 1))
+                        Next j
+                        rowValues = Join(vals, ", ")
                     Else
-                        If includeKey Then
-                            matchArray(1, i) = matches(i)(0) & ": " & matches(i)(1)
-                        Else
-                            matchArray(1, i) = matches(i)(1)
-                        End If
+                        rowValues = CStr(tempMatches(i, 2))
+                    End If
+                    
+                    If includeKey Then
+                        matchArray(1, i) = tempMatches(i, 1) & ": " & rowValues
+                    Else
+                        matchArray(1, i) = rowValues
                     End If
                 Next i
 
-            Case 3 ' Вывод в одну ячейку с разделением запятой, переводом строки и "; " в конце
+            Case 3 ' Îäíà ÿ÷åéêà
+                Dim result As String
+                result = ""
+                For i = 1 To validMatchesCount
+                    If colCount > 1 Then
+                        ReDim vals(1 To colCount)
+                        For j = 1 To colCount
+                            vals(j) = CStr(tempMatches(i, j + 1))
+                        Next j
+                        rowValues = Join(vals, ", ")
+                    Else
+                        rowValues = CStr(tempMatches(i, 2))
+                    End If
+                    
+                    If includeKey Then
+                        result = result & tempMatches(i, 1) & ": " & rowValues & "; " & vbNewLine
+                    Else
+                        result = result & rowValues & "; " & vbNewLine
+                    End If
+                Next i
+                
+                If Len(result) > 4 Then result = Left(result, Len(result) - 4)
                 ReDim matchArray(1 To 1, 1 To 1)
-                matchArray(1, 1) = ""
-                For i = 1 To matches.Count
-                    If resultColumn.Columns.Count > 1 Then
-                        If includeKey Then
-                            matchArray(1, 1) = matchArray(1, 1) & matches(i)(0) & ": " & Join(matches(i)(1), ", ") & "; " & vbNewLine
-                        Else
-                            matchArray(1, 1) = matchArray(1, 1) & Join(matches(i)(1), ", ") & "; " & vbNewLine
-                        End If
-                    Else
-                        If includeKey Then
-                            matchArray(1, 1) = matchArray(1, 1) & matches(i)(0) & ": " & matches(i)(1) & "; " & vbNewLine
-                        Else
-                            matchArray(1, 1) = matchArray(1, 1) & matches(i)(1) & "; " & vbNewLine
-                        End If
-                    End If
-                Next i
-                ' Удаляем последний "; " и перевод строки
-                If Right(matchArray(1, 1), 4) = "; " & vbNewLine Then
-                    matchArray(1, 1) = Left(matchArray(1, 1), Len(matchArray(1, 1)) - 4)
-                End If
+                matchArray(1, 1) = result
         End Select
 
-        ' Транспонирование результата, если включено
         If transposeResult Then
             CustomSearch = Application.WorksheetFunction.Transpose(matchArray)
         Else
             CustomSearch = matchArray
         End If
-
     Else
         CustomSearch = "Not Found"
     End If
@@ -314,3 +243,4 @@ ContinueLoop:
 ErrorHandler:
     CustomSearch = "Error: " & Err.Description
 End Function
+
