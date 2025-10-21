@@ -15,7 +15,7 @@ Function CustomSearch(searchValue As Variant, searchColumn As Range, resultColum
     Dim matchCount As Long, validMatchesCount As Long
     Dim lastRow As Long
     Dim matchArray() As Variant
-    Dim tempMatches() As Variant  ' Ìàññèâ âìåñòî Collection äëÿ ñêîðîñòè
+    Dim tempMatches() As Variant  ' Массив вместо Collection для скорости
     Dim maxMatches As Long
     Dim currentPrecision As Long
     Dim isFullMatch As Boolean
@@ -23,7 +23,7 @@ Function CustomSearch(searchValue As Variant, searchColumn As Range, resultColum
 
     On Error GoTo ErrorHandler
 
-    ' Validate input parameters (îáúåäèíåíî äëÿ ñêîðîñòè)
+    ' Validate input parameters (объединено для скорости)
     If searchColumn.Columns.Count > 1 Then
         CustomSearch = "Error: searchColumn must be a single column."
         Exit Function
@@ -41,7 +41,7 @@ Function CustomSearch(searchValue As Variant, searchColumn As Range, resultColum
         Exit Function
     End If
 
-    ' Îïðåäåëÿåì ðåæèì ïîèñêà
+    ' Определяем режим поиска
     isFullMatch = (charLimit = 0)
     If isFullMatch Then
         currentPrecision = Len(searchValue)
@@ -49,7 +49,7 @@ Function CustomSearch(searchValue As Variant, searchColumn As Range, resultColum
         currentPrecision = charLimit
     End If
 
-    ' Îïðåäåëÿåì äèàïàçîí äàííûõ
+    ' Определяем диапазон данных
     If searchColumn.Rows.Count = searchColumn.Worksheet.Rows.Count Then
         lastRow = searchColumn.Cells(searchColumn.Rows.Count, 1).End(xlUp).Row
         searchArray = searchColumn.Resize(lastRow).Value
@@ -63,7 +63,7 @@ Function CustomSearch(searchValue As Variant, searchColumn As Range, resultColum
 
     colCount = resultColumn.Columns.Count
 
-    ' Ñîçäàåì RegExp òîëüêî åñëè íóæíî
+    ' Создаем RegExp только если нужно
     If ignoreCharsAndSpaces Then
         Set regex = CreateObject("VBScript.RegExp")
         regex.Global = True
@@ -77,16 +77,16 @@ Function CustomSearch(searchValue As Variant, searchColumn As Range, resultColum
     If ignoreCase Then processedSearchValue = LCase(processedSearchValue)
     compareLength = Len(processedSearchValue)
 
-    ' Èíèöèàëèçàöèÿ âðåìåííîãî ìàññèâà (èñïîëüçóåì ìàññèâ âìåñòî Collection)
-    maxMatches = IIf(occurrence > 0, occurrence, 1000) ' Íà÷àëüíûé ðàçìåð
-    ReDim tempMatches(1 To maxMatches, 1 To colCount + 1) ' +1 äëÿ êëþ÷à
+    ' Инициализация временного массива (используем массив вместо Collection)
+    maxMatches = IIf(occurrence > 0, occurrence, 1000) ' Начальный размер
+    ReDim tempMatches(1 To maxMatches, 1 To colCount + 1) ' +1 для ключа
     
     matchCount = 0
     validMatchesCount = 0
 
-    ' Îñíîâíîé öèêë ïîèñêà
+    ' Основной цикл поиска
     For i = 1 To rowCount
-        ' Ïðåäîáðàáîòêà çíà÷åíèÿ ÿ÷åéêè
+        ' Предобработка значения ячейки
         If ignoreCharsAndSpaces Then
             processedSearchCell = regex.Replace(CStr(searchArray(i, 1)), "")
         Else
@@ -95,12 +95,12 @@ Function CustomSearch(searchValue As Variant, searchColumn As Range, resultColum
 
         If ignoreCase Then processedSearchCell = LCase(processedSearchCell)
 
-        ' Ïðîâåðêà ñîâïàäåíèÿ (îïòèìèçèðîâàíî)
+        ' Проверка совпадения (оптимизировано)
         Dim isMatch As Boolean
         If isFullMatch Then
             isMatch = (processedSearchCell = processedSearchValue)
         Else
-            ' Ïðîâåðÿåì äëèíó ïåðåä Left äëÿ ñêîðîñòè
+            ' Проверяем длину перед Left для скорости
             If Len(processedSearchCell) >= currentPrecision And compareLength >= currentPrecision Then
                 isMatch = (Left(processedSearchCell, currentPrecision) = Left(processedSearchValue, currentPrecision))
             Else
@@ -114,18 +114,18 @@ Function CustomSearch(searchValue As Variant, searchColumn As Range, resultColum
             If matchCount > skipCount Then
                 validMatchesCount = validMatchesCount + 1
                 
-                ' Ðàñøèðÿåì ìàññèâ ïðè íåîáõîäèìîñòè
+                ' Расширяем массив при необходимости
                 If validMatchesCount > maxMatches Then
                     maxMatches = maxMatches + 1000
                     ReDim Preserve tempMatches(1 To maxMatches, 1 To colCount + 1)
                 End If
                 
-                ' Ñîõðàíÿåì êëþ÷ åñëè íóæíî
+                ' Сохраняем ключ если нужно
                 If includeKey Then
                     tempMatches(validMatchesCount, 1) = searchArray(i, 1)
                 End If
                 
-                ' Ñîõðàíÿåì ðåçóëüòàòû
+                ' Сохраняем результаты
                 If colCount > 1 Then
                     For j = 1 To colCount
                         tempMatches(validMatchesCount, j + 1) = IIf(IsEmpty(resultArray(i, j)), "", resultArray(i, j))
@@ -134,16 +134,16 @@ Function CustomSearch(searchValue As Variant, searchColumn As Range, resultColum
                     tempMatches(validMatchesCount, 2) = IIf(IsEmpty(resultArray(i, 1)), "", resultArray(i, 1))
                 End If
 
-                ' Âûõîä åñëè äîñòèãíóòî íóæíîå êîëè÷åñòâî
+                ' Выход если достигнуто нужное количество
                 If occurrence > 0 And validMatchesCount = occurrence Then Exit For
             End If
         End If
     Next i
 
-    ' Ôîðìàòèðîâàíèå âûâîäà
+    ' Форматирование вывода
     If validMatchesCount > 0 Then
         Select Case multiLine
-            Case 0 ' Òàáëè÷íûé ôîðìàò
+            Case 0 ' Табличный формат
                 If includeKey Then
                     ReDim matchArray(1 To validMatchesCount, 1 To colCount + 1)
                     For i = 1 To validMatchesCount
@@ -161,7 +161,7 @@ Function CustomSearch(searchValue As Variant, searchColumn As Range, resultColum
                     Next i
                 End If
 
-            Case 1 ' Îäíà êîëîíêà
+            Case 1 ' Одна колонка
                 ReDim matchArray(1 To validMatchesCount, 1 To 1)
                 For i = 1 To validMatchesCount
                     Dim rowValues As String
@@ -183,7 +183,7 @@ Function CustomSearch(searchValue As Variant, searchColumn As Range, resultColum
                     End If
                 Next i
 
-            Case 2 ' Îäíà ñòðîêà
+            Case 2 ' Одна строка
                 ReDim matchArray(1 To 1, 1 To validMatchesCount)
                 For i = 1 To validMatchesCount
                     If colCount > 1 Then
@@ -203,7 +203,7 @@ Function CustomSearch(searchValue As Variant, searchColumn As Range, resultColum
                     End If
                 Next i
 
-            Case 3 ' Îäíà ÿ÷åéêà
+            Case 3 ' Одна ячейка
                 Dim result As String
                 result = ""
                 For i = 1 To validMatchesCount
