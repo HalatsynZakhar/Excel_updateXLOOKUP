@@ -1,0 +1,37 @@
+Function ExtractFirstDate(text As String) As Date
+    Dim regex As Object
+    Dim matches As Object
+    Dim day As String
+    Dim month As String
+    Dim year As String
+    Dim fullDate As Date
+
+    ' Создаем регулярное выражение для поиска даты 30 09 2024 13 15 
+    Set regex = CreateObject("VBScript.RegExp")
+    regex.ignoreCase = True
+    regex.Global = True
+    regex.Pattern = "(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})"
+
+    ' Ищем все совпадения в тексте
+    Set matches = regex.Execute(text)
+
+    ' Если есть совпадения, обрабатываем первое
+    If matches.Count > 0 Then
+        day = matches(0).SubMatches(0)
+        month = matches(0).SubMatches(1)
+        year = matches(0).SubMatches(2)
+
+        ' Проверяем, двузначный ли год
+        If Len(year) = 2 Then
+            year = "20" & year  ' Добавляем 20 для двузначного года
+        End If
+
+        ' Формируем полную дату
+        fullDate = DateSerial(year, month, day)
+        ExtractFirstDate = fullDate
+    Else
+        ' Возвращаем значение пустой даты, если дата не найдена
+        ExtractFirstDate = CVDate("01.01.1900") ' или другое значение по умолчанию
+    End If
+End Function
+

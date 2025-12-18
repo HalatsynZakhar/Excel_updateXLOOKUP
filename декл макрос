@@ -1,0 +1,74 @@
+Function CheckDates(inputStr As String) As String
+    Dim regex As Object
+    Dim matches As Object
+    Dim dateMatch As Object
+    Dim datePattern As String
+    Dim dayPart As Integer
+    Dim monthPart As Integer
+    Dim yearPart As Integer
+    Dim dateValue As Date
+    Dim referenceDate As Date
+    Dim hygienePos As Long
+    Dim searchStr As String
+    Dim foundLaterDate As Boolean
+    
+    ' Установите дату для сравнения (1 марта 2025 года)
+    referenceDate = DateSerial(2025, 3, 1)
+    foundLaterDate = False
+    
+    ' Определите позицию слова "Гигиена" в строке
+    hygienePos = InStr(inputStr, "Гигиена")
+    
+    ' Если слово "Гигиена" найдено, обрезаем строку до этого слова
+    If hygienePos > 0 Then
+        searchStr = Left(inputStr, hygienePos - 1)
+    Else
+        searchStr = inputStr
+    End If
+    
+    ' Создаем объект RegExp для поиска дат в формате ДД.ММ.ГГ
+    Set regex = CreateObject("VBScript.RegExp")
+    regex.Pattern = "\b\d{2}\.\d{2}\.\d{2}\b" ' Паттерн для формата ДД.ММ.ГГ
+    regex.Global = True
+    
+    ' Ищем все даты в обрезанной строке
+    If regex.Test(searchStr) Then
+        Set matches = regex.Execute(searchStr)
+        
+        ' Перебираем все найденные даты
+        For Each dateMatch In matches
+            datePattern = dateMatch.Value
+            
+            ' Разбиваем строку даты на компоненты
+            dayPart = CInt(Split(datePattern, ".")(0))
+            monthPart = CInt(Split(datePattern, ".")(1))
+            yearPart = CInt(Split(datePattern, ".")(2))
+            
+            ' Преобразуем год в полный формат (например, 24 -> 2024)
+            If yearPart < 100 Then
+                yearPart = yearPart + 2000
+            End If
+            
+            ' Создаем дату
+            On Error Resume Next
+            dateValue = DateSerial(yearPart, monthPart, dayPart)
+            On Error GoTo 0
+            
+            ' Проверяем, если дата позже даты для сравнения
+            If IsDate(dateValue) Then
+                Debug.Print "Found date: " & dateValue ' Вывод даты в окно Immediate для проверки
+                If dateValue > referenceDate Then
+                    foundLaterDate = True
+                    Exit For
+                End If
+            End If
+        Next dateMatch
+    End If
+    
+    ' Возвращаем результат на основе найденных дат
+    If foundLaterDate Then
+        CheckDates = "" ' Если найдена дата позже, ничего не выводим
+    Else
+        CheckDates = "!!!" ' Если не найдена ни одна дата позже
+    End If
+End Function

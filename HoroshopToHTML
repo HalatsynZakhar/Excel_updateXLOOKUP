@@ -1,0 +1,108 @@
+Function HoroshopToHTML(inputText As String) As String
+    Dim lines() As String
+    Dim result As String
+    Dim i As Integer
+    Dim line As String
+    Dim inList As Boolean
+    Dim cleanText As String
+    Dim firstParagraphDone As Boolean
+    
+    ' Очищаємо текст від _x000D_
+    cleanText = Replace(inputText, "_x000D_", vbLf)
+    cleanText = Replace(cleanText, Chr(13), "")
+    
+    ' Видаляємо множинні порожні рядки
+    Do While InStr(cleanText, vbLf & vbLf & vbLf) > 0
+        cleanText = Replace(cleanText, vbLf & vbLf & vbLf, vbLf & vbLf)
+    Loop
+    
+    ' Розділяємо на рядки
+    lines = Split(cleanText, vbLf)
+    
+    result = ""
+    inList = False
+    firstParagraphDone = False
+    
+    For i = 0 To UBound(lines)
+        line = Trim(lines(i))
+        
+        ' Пропускаємо зовсім порожні рядки і рядки тільки з "*"
+        If Len(line) = 0 Or line = "*" Then
+            GoTo NextLine
+        End If
+        
+        ' Видаляємо зайві пробіли
+        Do While InStr(line, "  ") > 0
+            line = Replace(line, "  ", " ")
+        Loop
+        
+        ' Перевіряємо заголовки (закінчуються на ":")
+        If Right(line, 1) = ":" And Left(line, 1) <> "*" And InStr(1, line, "http", vbTextCompare) = 0 Then
+            If inList Then
+                result = result & "</ul>" & vbLf
+                inList = False
+            End If
+            ' Додаємо два переноси перед заголовком
+            If firstParagraphDone Then
+                result = result & "<br><br>" & vbLf
+            End If
+            result = result & "<p><strong>" & line & "</strong></p>" & vbLf
+            
+        ' Елементи списку (починаються з "* " або "• ")
+        ElseIf Left(line, 2) = "* " Or Left(line, 2) = "• " Then
+            line = Trim(Mid(line, 3))
+            If Len(line) > 0 Then
+                ' Перевіряємо чи це посилання в списку
+                If InStr(1, line, "http", vbTextCompare) > 0 Then
+                    ' Це посилання - не додаємо в список
+                    If inList Then
+                        result = result & "</ul>" & vbLf
+                        inList = False
+                    End If
+                    ' Перевіряємо чи посилання вже має https://
+                    If Left(line, 4) <> "http" Then
+                        line = "https://" & line
+                    End If
+                    result = result & "<p><a href=""" & line & """ target=""_blank"">" & line & "</a></p>" & vbLf
+                Else
+                    ' Звичайний елемент списку
+                    If Not inList Then
+                        result = result & "<ul>" & vbLf
+                        inList = True
+                    End If
+                    result = result & "<li>" & line & "</li>" & vbLf
+                End If
+            End If
+            
+        ' Посилання без списку
+        ElseIf InStr(1, line, "http", vbTextCompare) > 0 Then
+            If inList Then
+                result = result & "</ul>" & vbLf
+                inList = False
+            End If
+            ' Перевіряємо чи посилання вже має https://
+            If Left(line, 4) <> "http" Then
+                line = "https://" & line
+            End If
+            result = result & "<p><a href=""" & line & """ target=""_blank"">" & line & "</a></p>" & vbLf
+            
+        ' Звичайний текст
+        Else
+            If inList Then
+                result = result & "</ul>" & vbLf
+                inList = False
+            End If
+            result = result & "<p>" & line & "</p>" & vbLf
+            firstParagraphDone = True
+        End If
+        
+NextLine:
+    Next i
+    
+    ' Закриваємо список якщо залишився відкритим
+    If inList Then
+        result = result & "</ul>" & vbLf
+    End If
+    
+    HoroshopToHTML = result
+End Function

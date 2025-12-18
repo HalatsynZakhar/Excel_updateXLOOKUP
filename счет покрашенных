@@ -1,0 +1,17 @@
+Function CountColoredCells(rng As Range) As Long
+    Dim cell As Range
+    Dim count As Long
+
+    count = 0
+
+    ' Перебираем ячейки в диапазоне
+    For Each cell In rng
+        ' Если у ячейки есть цвет (не белый), увеличиваем счётчик
+        If cell.Interior.ColorIndex <> -4142 Then ' -4142 соответствует "Нет заливки"
+            count = count + 1
+        End If
+    Next cell
+
+    ' Возвращаем количество
+    CountColoredCells = count
+End Function

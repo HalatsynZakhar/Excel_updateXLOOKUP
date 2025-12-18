@@ -1,0 +1,95 @@
+Function GenerateTable(columnCount As Long, ParamArray args()) As Variant
+    ' обновление от 26/09/2024
+
+
+    Dim ws As Worksheet
+    Dim outputRow As Long
+    Dim currentCell As Range
+    Dim i As Long, j As Long, k As Long
+    Dim lastRow As Long
+    Dim columnData As Range
+    Dim data As Variant
+    Dim results As Collection
+    Dim resultArray() As Variant
+    Dim totalCount As Long
+    Dim currentColumns() As Range
+    Dim currentData() As Variant
+
+    On Error GoTo ErrorHandler ' Error handling
+
+    ' Determine the initial output cell for the result
+    Set currentCell = Application.Caller.Offset(1, 0)
+    outputRow = currentCell.Row
+
+    ' Debugging information
+    Debug.Print "Starting GenerateTable function"
+    Debug.Print "Initial output row: " & outputRow
+
+    ' Initialize the collection for all results
+    Set results = New Collection
+
+    ' Iterate over parameters (sheet name and the fixed number of columns)
+    For i = LBound(args) To UBound(args) Step (columnCount + 1)
+        Set ws = ThisWorkbook.Sheets(args(i)) ' Find the sheet by name
+        Debug.Print "Worksheet: " & ws.Name
+        Debug.Print "Number of columns: " & columnCount
+
+        ' Initialize the array to store column ranges statically
+        ReDim currentColumns(1 To columnCount)
+
+        ' Identify the ranges for each column
+        For k = 1 To columnCount
+            Set currentColumns(k) = ws.Columns(args(i + k))
+            Debug.Print "Column " & k & " Range: " & currentColumns(k).Address
+        Next k
+
+        ' Determine the last row in the first column (assuming all columns have the same length)
+        lastRow = currentColumns(1).Cells(currentColumns(1).Rows.Count, 1).End(xlUp).Row
+        Debug.Print "Last row: " & lastRow
+
+        ' Process each row
+        For j = 1 To lastRow
+            ' Initialize the array to store row data statically
+            ReDim currentData(1 To columnCount)
+
+            ' Read data from each column and handle empty cells as empty strings
+            For k = 1 To columnCount
+                data = currentColumns(k).Cells(j, 1).Value
+                If IsEmpty(data) Then
+                    currentData(k) = "" ' Treat empty cells as empty strings
+                Else
+                    currentData(k) = data
+                End If
+                Debug.Print "Row " & j & ", Column " & k & ": " & currentData(k)
+            Next k
+
+            ' Check if any data is not empty and collect them
+            If Application.WorksheetFunction.CountA(currentData) > 0 Then
+                results.Add Array(ws.Name, currentData)
+            End If
+        Next j
+    Next i
+
+    ' Prepare the output array
+    If results.Count > 0 Then
+        ' ReDim array to include a fixed number of columns
+        ReDim resultArray(1 To results.Count, 1 To columnCount + 1)
+
+        For j = 1 To results.Count
+            resultArray(j, 1) = results(j)(0) ' Sheet name
+
+            ' Copy all column data into the result array
+            For k = 1 To columnCount
+                resultArray(j, k + 1) = results(j)(1)(k) ' Data from columns
+            Next k
+        Next j
+        GenerateTable = resultArray
+    Else
+        GenerateTable = "No matches found."
+    End If
+
+    Exit Function
+
+ErrorHandler:
+    GenerateTable = "Error occurred: " & Err.Description
+End Function

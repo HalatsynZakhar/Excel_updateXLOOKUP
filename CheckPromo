@@ -1,0 +1,9 @@
+Function CheckPromoOverlap(promoStart As Date, promoEnd As Date, periodStart As Date, periodEnd As Date) As String
+    ' Проверяем, пересекается ли промо-период с указанным временным интервалом
+    If (promoStart <= periodEnd And promoEnd >= periodStart) Then
+        CheckPromoOverlap = "+" ' Есть пересечение
+    Else
+        CheckPromoOverlap = "" ' Нет пересечения
+    End If
+End Function
+
