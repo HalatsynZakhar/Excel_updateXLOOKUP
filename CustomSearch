@@ -15,7 +15,7 @@ Function CustomSearch(searchValue As Variant, searchColumn As Range, resultColum
     Dim matchCount As Long, validMatchesCount As Long
     Dim lastRow As Long
     Dim matchArray() As Variant
-    Dim tempMatches() As Variant  ' Массив вместо Collection для скорости
+    Dim tempMatches() As Variant
     Dim maxMatches As Long
     Dim currentPrecision As Long
     Dim isFullMatch As Boolean
@@ -23,7 +23,7 @@ Function CustomSearch(searchValue As Variant, searchColumn As Range, resultColum
 
     On Error GoTo ErrorHandler
 
-    ' Validate input parameters (объединено для скорости)
+    ' Validate input parameters
     If searchColumn.Columns.Count > 1 Then
         CustomSearch = "Error: searchColumn must be a single column."
         Exit Function
@@ -77,9 +77,23 @@ Function CustomSearch(searchValue As Variant, searchColumn As Range, resultColum
     If ignoreCase Then processedSearchValue = LCase(processedSearchValue)
     compareLength = Len(processedSearchValue)
 
-    ' Инициализация временного массива (используем массив вместо Collection)
-    maxMatches = IIf(occurrence > 0, occurrence, 1000) ' Начальный размер
-    ReDim tempMatches(1 To maxMatches, 1 To colCount + 1) ' +1 для ключа
+    ' ИСПРАВЛЕНИЕ: Оптимальный баланс скорости и надёжности
+    ' Для малых данных - небольшой массив, для больших - адаптивный размер
+    If occurrence > 0 Then
+        maxMatches = occurrence
+    Else
+        ' Адаптивный размер: 100 для малых данных, rowCount для больших
+        If rowCount <= 100 Then
+            maxMatches = 100
+        ElseIf rowCount <= 1000 Then
+            maxMatches = rowCount
+        Else
+            ' Для больших данных: минимум rowCount, но с запасом
+            maxMatches = Application.WorksheetFunction.Min(rowCount + 1000, 100000)
+        End If
+    End If
+    
+    ReDim tempMatches(1 To maxMatches, 1 To colCount + 1)
     
     matchCount = 0
     validMatchesCount = 0
@@ -95,12 +109,11 @@ Function CustomSearch(searchValue As Variant, searchColumn As Range, resultColum
 
         If ignoreCase Then processedSearchCell = LCase(processedSearchCell)
 
-        ' Проверка совпадения (оптимизировано)
+        ' Проверка совпадения
         Dim isMatch As Boolean
         If isFullMatch Then
             isMatch = (processedSearchCell = processedSearchValue)
         Else
-            ' Проверяем длину перед Left для скорости
             If Len(processedSearchCell) >= currentPrecision And compareLength >= currentPrecision Then
                 isMatch = (Left(processedSearchCell, currentPrecision) = Left(processedSearchValue, currentPrecision))
             Else
@@ -114,9 +127,16 @@ Function CustomSearch(searchValue As Variant, searchColumn As Range, resultColum
             If matchCount > skipCount Then
                 validMatchesCount = validMatchesCount + 1
                 
-                ' Расширяем массив при необходимости
+                ' ИСПРАВЛЕНИЕ: Эффективное расширение массива
                 If validMatchesCount > maxMatches Then
-                    maxMatches = maxMatches + 1000
+                    ' Для небольших массивов удваиваем, для больших +50%
+                    Dim increment As Long
+                    If maxMatches < 1000 Then
+                        increment = maxMatches ' Удвоение для малых массивов
+                    Else
+                        increment = Application.WorksheetFunction.Max(1000, CLng(maxMatches * 0.5))
+                    End If
+                    maxMatches = maxMatches + increment
                     ReDim Preserve tempMatches(1 To maxMatches, 1 To colCount + 1)
                 End If
                 
@@ -243,4 +263,3 @@ Function CustomSearch(searchValue As Variant, searchColumn As Range, resultColum
 ErrorHandler:
     CustomSearch = "Error: " & Err.Description
 End Function
-
