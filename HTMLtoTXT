@@ -1,0 +1,201 @@
+Function HTMLtoTXT(inputHTML As String) As String
+    Dim result As String
+    Dim lines() As String
+    Dim i As Integer
+    Dim line As String
+    Dim cleanHTML As String
+    Dim inList As Boolean
+
+    ' Очищаємо HTML від зайвих символів
+    cleanHTML = inputHTML
+    cleanHTML = Replace(cleanHTML, vbCr, "")
+    cleanHTML = Replace(cleanHTML, vbCrLf, vbLf)
+    cleanHTML = Replace(cleanHTML, Chr(13), "")
+    
+    ' Замінюємо HTML теги на текстові еквіваленти
+    ' Видаляємо HTML entities
+    cleanHTML = Replace(cleanHTML, "&nbsp;", " ")
+    cleanHTML = Replace(cleanHTML, "&amp;", "&")
+    cleanHTML = Replace(cleanHTML, "&lt;", "<")
+    cleanHTML = Replace(cleanHTML, "&gt;", ">")
+    cleanHTML = Replace(cleanHTML, "&quot;", """")
+    cleanHTML = Replace(cleanHTML, "&#39;", "'")
+    
+    ' Заголовки з <strong> всередині <p>
+    cleanHTML = Replace(cleanHTML, "<p><strong>", vbLf & "##HEADER##")
+    cleanHTML = Replace(cleanHTML, "</strong></p>", "##HEADEREND##")
+    
+    ' Звичайні параграфи
+    cleanHTML = Replace(cleanHTML, "<p>", vbLf)
+    cleanHTML = Replace(cleanHTML, "</p>", "")
+    
+    ' Список
+    cleanHTML = Replace(cleanHTML, "<ul>", vbLf & "##LISTSTART##")
+    cleanHTML = Replace(cleanHTML, "</ul>", "##LISTEND##" & vbLf)
+    cleanHTML = Replace(cleanHTML, "<li>", "* ")
+    cleanHTML = Replace(cleanHTML, "</li>", "")
+    
+    ' Посилання
+    cleanHTML = ReplaceLinks(cleanHTML)
+    
+    ' Переноси рядків
+    cleanHTML = Replace(cleanHTML, "<br />", vbLf)
+    cleanHTML = Replace(cleanHTML, "<br/>", vbLf)
+    cleanHTML = Replace(cleanHTML, "<br>", vbLf)
+    cleanHTML = Replace(cleanHTML, "<BR />", vbLf)
+    cleanHTML = Replace(cleanHTML, "<BR/>", vbLf)
+    cleanHTML = Replace(cleanHTML, "<BR>", vbLf)
+    
+    ' Розділяємо на рядки
+    lines = Split(cleanHTML, vbLf)
+    
+    result = ""
+    inList = False
+    
+    For i = 0 To UBound(lines)
+        line = Trim(lines(i))
+        
+        ' Пропускаємо порожні рядки
+        If Len(line) = 0 Then
+            GoTo NextLine
+        End If
+        
+        ' Обробляємо маркери списку
+        If line = "##LISTSTART##" Then
+            inList = True
+            GoTo NextLine
+        End If
+        
+        If line = "##LISTEND##" Then
+            inList = False
+            GoTo NextLine
+        End If
+        
+        ' Обробляємо заголовки
+        If Left(line, 10) = "##HEADER##" Then
+            line = Mid(line, 11)
+            line = Replace(line, "##HEADEREND##", "")
+            ' Додаємо порожній рядок перед заголовком (крім першого)
+            If Len(result) > 0 Then
+                result = result & vbLf & vbLf
+            End If
+            result = result & line
+            GoTo NextLine
+        End If
+        
+        ' Звичайний текст або елемент списку
+        If Len(result) > 0 Then
+            result = result & vbLf
+        End If
+        result = result & line
+        
+NextLine:
+    Next i
+    
+    ' Очищаємо результат від множинних порожніх рядків
+    Do While InStr(result, vbLf & vbLf & vbLf) > 0
+        result = Replace(result, vbLf & vbLf & vbLf, vbLf & vbLf)
+    Loop
+    
+    ' Видаляємо порожні рядки на початку і в кінці
+    result = Trim(result)
+    
+    HTMLtoTXT = result
+End Function
+
+' Допоміжна функція для обробки посилань
+Private Function ReplaceLinks(htmlText As String) As String
+    Dim regex As Object
+    Dim matches As Object
+    Dim match As Object
+    Dim result As String
+    Dim i As Integer
+    
+    On Error Resume Next
+    
+    ' Створюємо RegExp об'єкт
+    Set regex = CreateObject("VBScript.RegExp")
+    regex.Global = True
+    regex.IgnoreCase = True
+    regex.Pattern = "<a href=""([^""]+)"" target=""_blank"">([^<]+)</a>"
+    
+    result = htmlText
+    
+    ' Знаходимо всі посилання
+    Set matches = regex.Execute(htmlText)
+    
+    ' Замінюємо кожне посилання
+    For Each match In matches
+        ' Замінюємо HTML посилання на просте посилання
+        result = Replace(result, match.Value, match.SubMatches(0))
+    Next match
+    
+    If Err.Number <> 0 Then
+        ' Якщо RegExp не працює, використовуємо простішу заміну
+        result = htmlText
+        Do While InStr(result, "<a href=""") > 0
+            Dim startPos As Integer
+            Dim endPos As Integer
+            Dim linkURL As String
+            
+            startPos = InStr(result, "<a href=""")
+            If startPos > 0 Then
+                endPos = InStr(startPos + 9, result, """")
+                If endPos > 0 Then
+                    linkURL = Mid(result, startPos + 9, endPos - startPos - 9)
+                    ' Знаходимо кінець тегу
+                    Dim tagEnd As Integer
+                    tagEnd = InStr(endPos, result, "</a>")
+                    If tagEnd > 0 Then
+                        ' Замінюємо весь тег посилання на URL
+                        result = Left(result, startPos - 1) & linkURL & Mid(result, tagEnd + 4)
+                    Else
+                        Exit Do
+                    End If
+                Else
+                    Exit Do
+                End If
+            End If
+        Loop
+    End If
+    
+    ReplaceLinks = result
+End Function
+
+' Функція для обробки всього стовпця
+Sub ConvertHTMLColumnToText()
+    Dim ws As Worksheet
+    Dim lastRow As Long
+    Dim i As Long
+    Dim sourceCol As String
+    Dim targetCol As String
+    Dim htmlContent As String
+    Dim textContent As String
+    
+    ' НАЛАШТУВАННЯ
+    sourceCol = "A"  ' Стовпець з HTML
+    targetCol = "B"  ' Стовпець для результату
+    
+    Set ws = ActiveSheet
+    
+    ' Знаходимо останній рядок
+    lastRow = ws.Cells(ws.Rows.Count, sourceCol).End(xlUp).Row
+    
+    ' Обробляємо кожен рядок (починаючи з 2, якщо є заголовок)
+    For i = 2 To lastRow
+        htmlContent = ws.Range(sourceCol & i).Value
+        
+        If Len(Trim(htmlContent)) > 0 Then
+            textContent = HTMLtoTXT(htmlContent)
+            ws.Range(targetCol & i).Value = textContent
+            
+            ' Виводимо прогрес
+            If i Mod 10 = 0 Then
+                Application.StatusBar = "Обробка: " & i & " з " & lastRow
+            End If
+        End If
+    Next i
+    
+    Application.StatusBar = False
+    MsgBox "Конвертація завершена! Оброблено рядків: " & (lastRow - 1), vbInformation
+End Sub
