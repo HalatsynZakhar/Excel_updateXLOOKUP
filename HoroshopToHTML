@@ -1,108 +1,419 @@
-Function HoroshopToHTML(inputText As String) As String
-    Dim lines() As String
+Option Explicit
+
+' Конвертує опис товару в чистий HTML для редактора Horoshop.
+' Враховує переноси рядків усередині абзаців, маркери \* та звичайні списки.
+Public Function HoroshopToHTML(ByVal inputText As String) As String
+    Dim logicalLines As Collection
     Dim result As String
-    Dim i As Integer
+    Dim currentListType As Long
+    Dim lineNumber As Long
     Dim line As String
-    Dim inList As Boolean
-    Dim cleanText As String
-    Dim firstParagraphDone As Boolean
-    
-    ' Очищаємо текст від _x000D_
-    cleanText = Replace(inputText, "_x000D_", vbLf)
-    cleanText = Replace(cleanText, Chr(13), "")
-    
-    ' Видаляємо множинні порожні рядки
-    Do While InStr(cleanText, vbLf & vbLf & vbLf) > 0
-        cleanText = Replace(cleanText, vbLf & vbLf & vbLf, vbLf & vbLf)
-    Loop
-    
-    ' Розділяємо на рядки
-    lines = Split(cleanText, vbLf)
-    
-    result = ""
-    inList = False
-    firstParagraphDone = False
-    
-    For i = 0 To UBound(lines)
-        line = Trim(lines(i))
-        
-        ' Пропускаємо зовсім порожні рядки і рядки тільки з "*"
-        If Len(line) = 0 Or line = "*" Then
-            GoTo NextLine
-        End If
-        
-        ' Видаляємо зайві пробіли
-        Do While InStr(line, "  ") > 0
-            line = Replace(line, "  ", " ")
-        Loop
-        
-        ' Перевіряємо заголовки (закінчуються на ":")
-        If Right(line, 1) = ":" And Left(line, 1) <> "*" And InStr(1, line, "http", vbTextCompare) = 0 Then
-            If inList Then
-                result = result & "</ul>" & vbLf
-                inList = False
+    Dim itemText As String
+    Dim nextItemText As String
+    Dim headingText As String
+    Dim listType As Long
+    Dim previousItemText As String
+
+    If Len(Trim$(inputText)) = 0 Then Exit Function
+
+    Set logicalLines = BuildLogicalLines(NormalizeText(inputText))
+
+    For lineNumber = 1 To logicalLines.Count
+        line = CStr(logicalLines(lineNumber))
+        listType = GetListItem(line, itemText)
+
+        If listType > 0 Then
+            ' У деяких описах назва наступного розділу помилково потрапляє
+            ' в кінець попереднього пункту списку (наприклад, "Характеристики фігурок").
+            If lineNumber < logicalLines.Count _
+                And GetListItem(CStr(logicalLines(lineNumber + 1)), nextItemText) > 0 _
+                And SplitTrailingSectionTitle(itemText, previousItemText, headingText) Then
+                EnsureList result, currentListType, listType
+                result = result & "<li>" & LinkifyText(previousItemText) & "</li>" & vbLf
+                CloseList result, currentListType
+                result = result & "<p><strong>" & LinkifyText(headingText) & "</strong></p>" & vbLf
+            Else
+                EnsureList result, currentListType, listType
+                result = result & "<li>" & LinkifyText(itemText) & "</li>" & vbLf
             End If
-            ' Додаємо два переноси перед заголовком
-            If firstParagraphDone Then
-                result = result & "<br><br>" & vbLf
-            End If
-            result = result & "<p><strong>" & line & "</strong></p>" & vbLf
-            
-        ' Елементи списку (починаються з "* " або "• ")
-        ElseIf Left(line, 2) = "* " Or Left(line, 2) = "• " Then
-            line = Trim(Mid(line, 3))
-            If Len(line) > 0 Then
-                ' Перевіряємо чи це посилання в списку
-                If InStr(1, line, "http", vbTextCompare) > 0 Then
-                    ' Це посилання - не додаємо в список
-                    If inList Then
-                        result = result & "</ul>" & vbLf
-                        inList = False
-                    End If
-                    ' Перевіряємо чи посилання вже має https://
-                    If Left(line, 4) <> "http" Then
-                        line = "https://" & line
-                    End If
-                    result = result & "<p><a href=""" & line & """ target=""_blank"">" & line & "</a></p>" & vbLf
-                Else
-                    ' Звичайний елемент списку
-                    If Not inList Then
-                        result = result & "<ul>" & vbLf
-                        inList = True
-                    End If
-                    result = result & "<li>" & line & "</li>" & vbLf
-                End If
-            End If
-            
-        ' Посилання без списку
-        ElseIf InStr(1, line, "http", vbTextCompare) > 0 Then
-            If inList Then
-                result = result & "</ul>" & vbLf
-                inList = False
-            End If
-            ' Перевіряємо чи посилання вже має https://
-            If Left(line, 4) <> "http" Then
-                line = "https://" & line
-            End If
-            result = result & "<p><a href=""" & line & """ target=""_blank"">" & line & "</a></p>" & vbLf
-            
-        ' Звичайний текст
+
+        ElseIf GetMarkdownHeading(line, headingText) Then
+            CloseList result, currentListType
+            result = result & "<h2>" & LinkifyText(headingText) & "</h2>" & vbLf
+
+        ElseIf IsSectionTitle(line) Then
+            CloseList result, currentListType
+            result = result & "<p><strong>" & LinkifyText(line) & "</strong></p>" & vbLf
+
         Else
-            If inList Then
-                result = result & "</ul>" & vbLf
-                inList = False
-            End If
-            result = result & "<p>" & line & "</p>" & vbLf
-            firstParagraphDone = True
+            CloseList result, currentListType
+            result = result & "<p>" & LinkifyText(line) & "</p>" & vbLf
         End If
-        
-NextLine:
-    Next i
-    
-    ' Закриваємо список якщо залишився відкритим
-    If inList Then
-        result = result & "</ul>" & vbLf
+    Next lineNumber
+
+    CloseList result, currentListType
+    HoroshopToHTML = Trim$(result)
+End Function
+
+' Нормалізує дані з Excel та перетворює екрановані маркери \* на звичайні.
+Private Function NormalizeText(ByVal value As String) As String
+    value = Replace(value, "_x000D_", vbLf)
+    value = Replace(value, vbCrLf, vbLf)
+    value = Replace(value, vbCr, vbLf)
+    value = Replace(value, ChrW(160), " ")
+    value = Replace(value, "\*", vbLf & "* ")
+    NormalizeText = value
+End Function
+
+' Формує логічні рядки: фізичні переноси в межах тексту склеюються пробілом,
+' а списки й заголовки залишаються окремими блоками.
+Private Function BuildLogicalLines(ByVal value As String) As Collection
+    Dim sourceLines() As String
+    Dim result As New Collection
+    Dim buffer As String
+    Dim line As String
+    Dim prefixText As String
+    Dim titleText As String
+    Dim lineNumber As Long
+    Dim startsNewBlock As Boolean
+
+    sourceLines = Split(value, vbLf)
+
+    For lineNumber = LBound(sourceLines) To UBound(sourceLines)
+        line = NormalizeLine(sourceLines(lineNumber))
+
+        If Len(line) = 0 Then
+            FlushBuffer result, buffer
+            startsNewBlock = True
+
+        ElseIf IsSectionTitle(line) And SplitInlineSectionTitle(line, prefixText, titleText) Then
+            AppendToBuffer buffer, prefixText
+            FlushBuffer result, buffer
+            result.Add titleText
+            startsNewBlock = False
+
+        ElseIf IsStructuralLine(line) Then
+            FlushBuffer result, buffer
+            result.Add line
+            startsNewBlock = False
+
+        ElseIf Len(buffer) = 0 And result.Count = 0 _
+            And IsLikelyMainTitle(line) And HasTextAfter(sourceLines, lineNumber) Then
+            result.Add "## " & line
+            startsNewBlock = False
+
+        ElseIf Len(buffer) = 0 And Not startsNewBlock And result.Count > 0 _
+            And IsListLine(CStr(result(result.Count))) Then
+            AppendToLastLine result, line
+
+        ElseIf Len(buffer) = 0 Then
+            buffer = line
+            startsNewBlock = False
+
+        Else
+            buffer = buffer & " " & line
+            startsNewBlock = False
+        End If
+    Next lineNumber
+
+    FlushBuffer result, buffer
+    Set BuildLogicalLines = result
+End Function
+
+Private Sub FlushBuffer(ByRef lines As Collection, ByRef buffer As String)
+    If Len(buffer) > 0 Then lines.Add buffer
+    buffer = vbNullString
+End Sub
+
+Private Sub AppendToBuffer(ByRef buffer As String, ByVal value As String)
+    If Len(value) = 0 Then Exit Sub
+
+    If Len(buffer) = 0 Then
+        buffer = value
+    Else
+        buffer = buffer & " " & value
     End If
-    
-    HoroshopToHTML = result
+End Sub
+
+Private Function IsListLine(ByVal value As String) As Boolean
+    Dim itemText As String
+
+    IsListLine = GetListItem(value, itemText) > 0
+End Function
+
+Private Sub AppendToLastLine(ByRef lines As Collection, ByVal value As String)
+    Dim previousValue As String
+
+    previousValue = CStr(lines(lines.Count))
+    lines.Remove lines.Count
+    lines.Add previousValue & " " & value
+End Sub
+
+Private Function HasTextAfter(ByRef lines() As String, ByVal currentLine As Long) As Boolean
+    Dim lineNumber As Long
+
+    For lineNumber = currentLine + 1 To UBound(lines)
+        If Len(NormalizeLine(lines(lineNumber))) > 0 Then
+            HasTextAfter = True
+            Exit Function
+        End If
+    Next lineNumber
+End Function
+
+Private Function NormalizeLine(ByVal value As String) As String
+    value = Replace(value, vbTab, " ")
+    value = Trim$(value)
+
+    Do While InStr(value, "  ") > 0
+        value = Replace(value, "  ", " ")
+    Loop
+
+    NormalizeLine = value
+End Function
+
+Private Function IsStructuralLine(ByVal value As String) As Boolean
+    Dim itemText As String
+
+    IsStructuralLine = GetListItem(value, itemText) > 0 _
+        Or GetMarkdownHeading(value, itemText) _
+        Or IsSectionTitle(value)
+End Function
+
+' Повертає 1 для <ul>, 2 для <ol> або 0, якщо рядок не є елементом списку.
+Private Function GetListItem(ByVal value As String, ByRef itemText As String) As Long
+    Dim marker As String
+    Dim separatorPosition As Long
+    Dim numberPart As String
+
+    itemText = vbNullString
+    If Len(value) < 2 Then Exit Function
+
+    marker = Left$(value, 1)
+    If (marker = "*" Or marker = "-" Or marker = "•" Or marker = "–" Or marker = "—") _
+        And Mid$(value, 2, 1) = " " Then
+        itemText = Trim$(Mid$(value, 2))
+        If Len(itemText) > 0 Then GetListItem = 1
+        Exit Function
+    End If
+
+    separatorPosition = InStr(value, ".")
+    If separatorPosition = 0 Or separatorPosition > 5 Then
+        separatorPosition = InStr(value, ")")
+    End If
+
+    If separatorPosition > 1 And separatorPosition <= 5 Then
+        numberPart = Left$(value, separatorPosition - 1)
+        If IsDigitsOnly(numberPart) And Mid$(value, separatorPosition + 1, 1) = " " Then
+            itemText = Trim$(Mid$(value, separatorPosition + 1))
+            If Len(itemText) > 0 Then GetListItem = 2
+        End If
+    End If
+End Function
+
+Private Function IsDigitsOnly(ByVal value As String) As Boolean
+    Dim position As Long
+    Dim symbol As String
+
+    If Len(value) = 0 Then Exit Function
+
+    For position = 1 To Len(value)
+        symbol = Mid$(value, position, 1)
+        If symbol < "0" Or symbol > "9" Then Exit Function
+    Next position
+
+    IsDigitsOnly = True
+End Function
+
+Private Function GetMarkdownHeading(ByVal value As String, ByRef headingText As String) As Boolean
+    Dim position As Long
+
+    headingText = vbNullString
+    If Left$(value, 1) <> "#" Then Exit Function
+
+    position = 1
+    Do While Mid$(value, position, 1) = "#"
+        position = position + 1
+    Loop
+
+    If position <= 2 Or Mid$(value, position, 1) <> " " Then Exit Function
+    headingText = Trim$(Mid$(value, position + 1))
+    GetMarkdownHeading = (Len(headingText) > 0)
+End Function
+
+' Рядок із двокрапкою в кінці є назвою розділу, якщо це не URL.
+Private Function IsSectionTitle(ByVal value As String) As Boolean
+    IsSectionTitle = Right$(value, 1) = ":" _
+        And InStr(1, value, "http://", vbTextCompare) = 0 _
+        And InStr(1, value, "https://", vbTextCompare) = 0
+End Function
+
+' Відокремлює заголовок, який стоїть наприкінці довгого рядка перед маркером \*.
+' Наприклад: "... для колекції. Особливості:".
+Private Function SplitInlineSectionTitle(ByVal value As String, ByRef prefixText As String, ByRef titleText As String) As Boolean
+    Dim words() As String
+    Dim position As Long
+    Dim firstTitleWord As Long
+    Dim word As String
+
+    prefixText = vbNullString
+    titleText = vbNullString
+    If Not IsSectionTitle(value) Then Exit Function
+
+    words = Split(Left$(value, Len(value) - 1), " ")
+    If UBound(words) = 0 Then Exit Function
+
+    For position = UBound(words) To 0 Step -1
+        word = words(position)
+        If StartsWithUppercaseLetter(word) Then
+            firstTitleWord = position
+        ElseIf firstTitleWord > 0 Then
+            Exit For
+        End If
+    Next position
+
+    If firstTitleWord = 0 Or firstTitleWord = UBound(words) + 1 Then Exit Function
+
+    prefixText = JoinWords(words, 0, firstTitleWord - 1)
+    titleText = JoinWords(words, firstTitleWord, UBound(words)) & ":"
+    SplitInlineSectionTitle = Len(prefixText) > 0 And Len(titleText) <= 70
+End Function
+
+Private Function StartsWithUppercaseLetter(ByVal value As String) As Boolean
+    Dim firstSymbol As String
+
+    If Len(value) = 0 Then Exit Function
+    firstSymbol = Left$(value, 1)
+    StartsWithUppercaseLetter = firstSymbol = UCase$(firstSymbol) _
+        And firstSymbol <> LCase$(firstSymbol)
+End Function
+
+Private Function JoinWords(ByRef words() As String, ByVal firstPosition As Long, ByVal lastPosition As Long) As String
+    Dim position As Long
+
+    For position = firstPosition To lastPosition
+        If Len(JoinWords) > 0 Then JoinWords = JoinWords & " "
+        JoinWords = JoinWords & words(position)
+    Next position
+End Function
+
+' Короткий перший рядок без розділового знаку трактуємо як назву товарної групи.
+Private Function IsLikelyMainTitle(ByVal value As String) As Boolean
+    IsLikelyMainTitle = Len(value) <= 70 _
+        And InStr(value, ".") = 0 _
+        And InStr(value, ",") = 0 _
+        And InStr(value, ":") = 0 _
+        And InStr(value, "!") = 0 _
+        And InStr(value, "?") = 0
+End Function
+
+' Відокремлює коротку назву секції, яка опинилася наприкінці пункту списку.
+Private Function SplitTrailingSectionTitle(ByVal value As String, ByRef itemText As String, ByRef headingText As String) As Boolean
+    Dim separatorPosition As Long
+    Dim candidate As String
+
+    itemText = vbNullString
+    headingText = vbNullString
+    separatorPosition = InStrRev(value, ". ")
+    If separatorPosition = 0 Then Exit Function
+
+    candidate = Trim$(Mid$(value, separatorPosition + 2))
+    If Len(candidate) = 0 Or Len(candidate) > 45 Then Exit Function
+    If Not IsLikelyMainTitle(candidate) Then Exit Function
+
+    itemText = Left$(value, separatorPosition)
+    headingText = candidate
+    SplitTrailingSectionTitle = True
+End Function
+
+Private Sub EnsureList(ByRef result As String, ByRef currentListType As Long, ByVal requiredListType As Long)
+    If currentListType = requiredListType Then Exit Sub
+
+    CloseList result, currentListType
+    If requiredListType = 1 Then
+        result = result & "<ul>" & vbLf
+    Else
+        result = result & "<ol>" & vbLf
+    End If
+    currentListType = requiredListType
+End Sub
+
+Private Sub CloseList(ByRef result As String, ByRef currentListType As Long)
+    If currentListType = 1 Then
+        result = result & "</ul>" & vbLf
+    ElseIf currentListType = 2 Then
+        result = result & "</ol>" & vbLf
+    End If
+    currentListType = 0
+End Sub
+
+' Екранує користувацький текст і перетворює http(s)/www-посилання на клікабельні.
+Private Function LinkifyText(ByVal value As String) As String
+    Dim expression As Object
+    Dim matches As Object
+    Dim match As Object
+    Dim result As String
+    Dim sourcePosition As Long
+    Dim urlText As String
+    Dim trailingText As String
+
+    On Error GoTo PlainText
+
+    Set expression = CreateObject("VBScript.RegExp")
+    expression.Global = True
+    expression.IgnoreCase = True
+    expression.Pattern = "((https?://|www\.)[^\s<>]+)"
+    Set matches = expression.Execute(value)
+
+    sourcePosition = 1
+    For Each match In matches
+        result = result & HtmlEncode(Mid$(value, sourcePosition, match.FirstIndex + 1 - sourcePosition))
+        urlText = RemoveTrailingUrlPunctuation(CStr(match.Value), trailingText)
+
+        If Len(urlText) > 0 Then
+            result = result & "<a href=" & Chr$(34) & HtmlEncode(NormalizeUrl(urlText)) _
+                & Chr$(34) & " target=" & Chr$(34) & "_blank" & Chr$(34) _
+                & " rel=" & Chr$(34) & "noopener noreferrer" & Chr$(34) & ">" _
+                & HtmlEncode(urlText) & "</a>"
+        End If
+        result = result & HtmlEncode(trailingText)
+        sourcePosition = match.FirstIndex + match.Length + 1
+    Next match
+
+    result = result & HtmlEncode(Mid$(value, sourcePosition))
+    LinkifyText = result
+    Exit Function
+
+PlainText:
+    LinkifyText = HtmlEncode(value)
+End Function
+
+Private Function NormalizeUrl(ByVal value As String) As String
+    If LCase$(Left$(value, 4)) = "www." Then
+        NormalizeUrl = "https://" & value
+    Else
+        NormalizeUrl = value
+    End If
+End Function
+
+Private Function RemoveTrailingUrlPunctuation(ByVal value As String, ByRef trailingText As String) As String
+    Dim lastSymbol As String
+
+    trailingText = vbNullString
+    Do While Len(value) > 0
+        lastSymbol = Right$(value, 1)
+        If InStr(".,;:!?)]}""'", lastSymbol) = 0 Then Exit Do
+        value = Left$(value, Len(value) - 1)
+        trailingText = lastSymbol & trailingText
+    Loop
+
+    RemoveTrailingUrlPunctuation = value
+End Function
+
+Private Function HtmlEncode(ByVal value As String) As String
+    value = Replace(value, "&", "&amp;")
+    value = Replace(value, "<", "&lt;")
+    value = Replace(value, ">", "&gt;")
+    value = Replace(value, Chr$(34), "&quot;")
+    value = Replace(value, "'", "&#39;")
+    HtmlEncode = value
 End Function
