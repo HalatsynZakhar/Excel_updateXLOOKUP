@@ -93,9 +93,58 @@ Private Function NormalizeText(ByVal value As String) As String
     value = Replace(value, vbCrLf, vbLf)
     value = Replace(value, vbCr, vbLf)
     value = Replace(value, ChrW(160), " ")
-    value = Replace(value, "\*", vbLf & "* ")
-    value = Replace(value, " * ", vbLf & "* ")
-    NormalizeText = value
+    value = Replace(value, Chr$(92) & "*", "*")
+    NormalizeText = NormalizeBulletMarkers(value)
+End Function
+
+' Приводить маркери списку з копійованих описів до єдиного вигляду "* ".
+Private Function NormalizeBulletMarkers(ByVal value As String) As String
+    Dim result As String
+    Dim position As Long
+    Dim symbol As String
+
+    position = 1
+    Do While position <= Len(value)
+        symbol = Mid$(value, position, 1)
+
+        If IsBulletSymbol(symbol) And IsBulletPosition(value, position) Then
+            If Len(result) > 0 And Right$(result, 1) <> vbLf Then result = result & vbLf
+            result = result & "* "
+            position = position + 1
+
+            Do While position <= Len(value) And IsInlineSpace(Mid$(value, position, 1))
+                position = position + 1
+            Loop
+        Else
+            result = result & symbol
+            position = position + 1
+        End If
+    Loop
+
+    NormalizeBulletMarkers = result
+End Function
+
+Private Function IsBulletSymbol(ByVal value As String) As Boolean
+    Select Case value
+        Case "*", "-", "•", "◦", "▪", "▫", "●", "○", "◉", "‣", "⁃", "∙", "·", _
+            "–", "—", "―", "►", "▶", "➢", "➤", "➔", "✓", "✔"
+            IsBulletSymbol = True
+    End Select
+End Function
+
+Private Function IsBulletPosition(ByVal value As String, ByVal position As Long) As Boolean
+    Dim previousSymbol As String
+    Dim nextSymbol As String
+
+    If position > 1 Then previousSymbol = Mid$(value, position - 1, 1)
+    If position < Len(value) Then nextSymbol = Mid$(value, position + 1, 1)
+
+    IsBulletPosition = (position = 1 Or IsInlineSpace(previousSymbol)) _
+        And (position = Len(value) Or IsInlineSpace(nextSymbol))
+End Function
+
+Private Function IsInlineSpace(ByVal value As String) As Boolean
+    IsInlineSpace = value = " " Or value = vbTab Or value = vbCr Or value = vbLf
 End Function
 
 Private Function NormalizeLine(ByVal value As String) As String
