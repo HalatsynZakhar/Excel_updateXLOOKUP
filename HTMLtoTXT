@@ -51,6 +51,7 @@ Private Function CleanPreviousAttempts(ByVal value As String) As String
 
     value = Replace(value, Chr$(92) & "*", "*")
     value = NormalizeBrokenLinks(value)
+    value = RegexReplace(value, "^\s*```[^\r\n]*$", vbNullString)
     CleanPreviousAttempts = value
 End Function
 
@@ -83,6 +84,7 @@ Private Function RegexReplace(ByVal value As String, ByVal pattern As String, By
     Set expression = CreateObject("VBScript.RegExp")
     expression.Global = True
     expression.IgnoreCase = True
+    expression.MultiLine = True
     expression.Pattern = pattern
     RegexReplace = expression.Replace(value, replacement)
     Exit Function
@@ -96,11 +98,12 @@ End Function
 Private Function FormatPlainText(ByVal value As String) As String
     Dim lines As Variant
     Dim result As String
+    Dim pendingText As String
     Dim line As String
     Dim bodyText As String
     Dim headerText As String
     Dim lineNumber As Long
-    Dim previousWasBlank As Boolean
+    Dim pendingType As Long
 
     lines = Split(value, vbLf)
 
@@ -108,18 +111,31 @@ Private Function FormatPlainText(ByVal value As String) As String
         line = NormalizeLine(CStr(lines(lineNumber)))
 
         If Len(line) = 0 Then
-            If Len(result) > 0 Then previousWasBlank = True
+            FlushTextBlock result, pendingText, pendingType
 
         ElseIf SplitTrailingHeader(line, bodyText, headerText) Then
-            AppendPlainLine result, bodyText, False
-            AppendPlainLine result, headerText, True
-            previousWasBlank = False
+            AddLineToBlock pendingText, pendingType, bodyText
+            FlushTextBlock result, pendingText, pendingType
+            AppendStandaloneBlock result, headerText
+
+        ElseIf IsSectionTitle(line) Then
+            FlushTextBlock result, pendingText, pendingType
+            AppendStandaloneBlock result, line
+
+        ElseIf IsListItem(line) Then
+            If pendingType <> 1 Then FlushTextBlock result, pendingText, pendingType
+            AddLineToBlock pendingText, pendingType, line
+
+        ElseIf Len(result) = 0 And Len(pendingText) = 0 _
+            And IsLikelyFirstTitle(line) And HasTextAfter(lines, lineNumber) Then
+            AppendStandaloneBlock result, line
 
         Else
-            AppendPlainLine result, line, previousWasBlank Or IsSectionTitle(line)
-            previousWasBlank = False
+            AddLineToBlock pendingText, pendingType, line
         End If
     Next lineNumber
+
+    FlushTextBlock result, pendingText, pendingType
 
     Do While InStr(result, vbLf & vbLf & vbLf) > 0
         result = Replace(result, vbLf & vbLf & vbLf, vbLf & vbLf)
@@ -128,15 +144,63 @@ Private Function FormatPlainText(ByVal value As String) As String
     FormatPlainText = Trim$(result)
 End Function
 
-Private Sub AppendPlainLine(ByRef result As String, ByVal value As String, ByVal addBlankBefore As Boolean)
-    If Len(value) = 0 Then Exit Sub
+Private Sub AddLineToBlock(ByRef pendingText As String, ByRef pendingType As Long, ByVal value As String)
+    Dim lineType As Long
 
-    If Len(result) > 0 Then
-        If addBlankBefore And Right$(result, 2) <> vbLf & vbLf Then result = result & vbLf
-        result = result & vbLf
+    If Len(value) = 0 Then Exit Sub
+    If IsListItem(value) Then
+        lineType = 1
+    Else
+        lineType = 0
     End If
+
+    If Len(pendingText) = 0 Then
+        pendingText = value
+        pendingType = lineType
+    ElseIf pendingType = 1 And lineType = 1 Then
+        pendingText = pendingText & vbLf & value
+    Else
+        pendingText = pendingText & " " & value
+    End If
+End Sub
+
+Private Sub FlushTextBlock(ByRef result As String, ByRef pendingText As String, ByRef pendingType As Long)
+    If Len(pendingText) = 0 Then Exit Sub
+    AppendStandaloneBlock result, pendingText
+    pendingText = vbNullString
+    pendingType = 0
+End Sub
+
+Private Sub AppendStandaloneBlock(ByRef result As String, ByVal value As String)
+    If Len(value) = 0 Then Exit Sub
+    If Len(result) > 0 Then result = result & vbLf & vbLf
     result = result & value
 End Sub
+
+Private Function IsListItem(ByVal value As String) As Boolean
+    IsListItem = Left$(value, 2) = "* " Or Left$(value, 2) = "- " _
+        Or Left$(value, 2) = "• "
+End Function
+
+Private Function IsLikelyFirstTitle(ByVal value As String) As Boolean
+    IsLikelyFirstTitle = Len(value) <= 70 _
+        And InStr(value, ".") = 0 _
+        And InStr(value, ",") = 0 _
+        And InStr(value, ":") = 0 _
+        And InStr(value, "!") = 0 _
+        And InStr(value, "?") = 0
+End Function
+
+Private Function HasTextAfter(ByRef lines As Variant, ByVal currentLine As Long) As Boolean
+    Dim lineNumber As Long
+
+    For lineNumber = currentLine + 1 To UBound(lines)
+        If Len(NormalizeLine(CStr(lines(lineNumber)))) > 0 Then
+            HasTextAfter = True
+            Exit Function
+        End If
+    Next lineNumber
+End Function
 
 ' Розділяє рядки виду "* Опис. Характеристики:" та "... Відеоогляд:".
 Private Function SplitTrailingHeader(ByVal value As String, ByRef bodyText As String, _
