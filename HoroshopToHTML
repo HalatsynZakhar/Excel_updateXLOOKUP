@@ -14,6 +14,9 @@ Public Function HoroshopToHTML(ByVal inputText As String) As String
     Dim currentListType As Long
     Dim newListType As Long
 
+    ' Після оновлення VBA-коду формула повинна перерахуватися, навіть якщо F2 не змінювалася.
+    Application.Volatile True
+
     If Len(Trim$(inputText)) = 0 Then Exit Function
 
     sourceLines = Split(NormalizeText(inputText), vbLf)
