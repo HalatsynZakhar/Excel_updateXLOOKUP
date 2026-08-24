@@ -42,12 +42,12 @@ Private Function CleanPreviousAttempts(ByVal value As String) As String
     Next passNumber
 
     ' Відновлюємо символи, пошкоджені при неправильному декодуванні UTF-8.
-    value = Replace(value, "вЂ”", "—")
-    value = Replace(value, "вЂ“", "–")
-    value = Replace(value, "вЂ¦", "…")
-    value = Replace(value, "вЂ™", "’")
-    value = Replace(value, "вЂњ", "“")
-    value = Replace(value, "вЂќ", "”")
+    value = Replace(value, ChrW(&H432) & ChrW(&H402) & ChrW(&H201D), ChrW(&H2014))
+    value = Replace(value, ChrW(&H432) & ChrW(&H402) & ChrW(&H201C), ChrW(&H2013))
+    value = Replace(value, ChrW(&H432) & ChrW(&H402) & ChrW(&HA6), ChrW(&H2026))
+    value = Replace(value, ChrW(&H432) & ChrW(&H402) & ChrW(&H2122), ChrW(&H2019))
+    value = Replace(value, ChrW(&H432) & ChrW(&H402) & ChrW(&H45A), ChrW(&H201C))
+    value = Replace(value, ChrW(&H432) & ChrW(&H402) & ChrW(&H45C), ChrW(&H201D))
 
     value = Replace(value, Chr$(92) & "*", "*")
     value = NormalizeBrokenLinks(value)
