@@ -94,6 +94,7 @@ Private Function NormalizeText(ByVal value As String) As String
     value = Replace(value, vbCr, vbLf)
     value = Replace(value, ChrW(160), " ")
     value = Replace(value, "\*", vbLf & "* ")
+    value = Replace(value, " * ", vbLf & "* ")
     NormalizeText = value
 End Function
 
