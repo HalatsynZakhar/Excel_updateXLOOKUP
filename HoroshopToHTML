@@ -93,6 +93,14 @@ Private Function NormalizeText(ByVal value As String) As String
     value = Replace(value, vbCrLf, vbLf)
     value = Replace(value, vbCr, vbLf)
     value = Replace(value, ChrW(160), " ")
+    value = Replace(value, "&nbsp;", " ")
+    value = Replace(value, "&bull;", " * ")
+    value = Replace(value, "&#8226;", " * ")
+    value = Replace(value, "&#x2022;", " * ")
+    value = Replace(value, "&middot;", " * ")
+    value = Replace(value, "&#183;", " * ")
+    value = Replace(value, "&mdash;", "—")
+    value = Replace(value, "&ndash;", "–")
     value = Replace(value, Chr$(92) & "*", "*")
     NormalizeText = NormalizeBulletMarkers(value)
 End Function
@@ -127,7 +135,7 @@ End Function
 Private Function IsBulletSymbol(ByVal value As String) As Boolean
     Select Case value
         Case "*", "-", "•", "◦", "▪", "▫", "●", "○", "◉", "‣", "⁃", "∙", "·", _
-            "–", "—", "―", "►", "▶", "➢", "➤", "➔", "✓", "✔"
+            "►", "▶", "➢", "➤", "➔", "✓", "✔"
             IsBulletSymbol = True
     End Select
 End Function
