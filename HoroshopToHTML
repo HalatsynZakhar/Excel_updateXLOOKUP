@@ -27,7 +27,7 @@ Public Function HoroshopToHTML(ByVal inputText As String) As String
         If Len(line) = 0 Then
             FlushPending result, pendingText, pendingType, currentListType
 
-        ElseIf GetMarkdownHeading(line, headingText) Then
+        ElseIf GetBoldHeading(line, headingText) Or GetMarkdownHeading(line, headingText) Then
             FlushPending result, pendingText, pendingType, currentListType
             CloseList result, currentListType
             result = result & "<h2>" & LinkifyText(headingText) & "</h2>" & vbLf
@@ -102,6 +102,7 @@ Private Function NormalizeText(ByVal value As String) As String
     value = Replace(value, "&mdash;", "—")
     value = Replace(value, "&ndash;", "–")
     value = Replace(value, Chr$(92) & "*", "*")
+    value = Replace(value, ChrW(&H2022) & " ", vbLf & "* ")
     NormalizeText = NormalizeBulletMarkers(value)
 End Function
 
@@ -242,6 +243,16 @@ Private Function GetMarkdownHeading(ByVal value As String, ByRef headingText As 
     If position <= 2 Or Mid$(value, position, 1) <> " " Then Exit Function
     headingText = Trim$(Mid$(value, position + 1))
     GetMarkdownHeading = Len(headingText) > 0
+End Function
+
+' Markdown-виділення **Заголовок:** у вихідному тексті є назвою розділу.
+Private Function GetBoldHeading(ByVal value As String, ByRef headingText As String) As Boolean
+    headingText = vbNullString
+    If Len(value) < 5 Then Exit Function
+    If Left$(value, 2) <> "**" Or Right$(value, 2) <> "**" Then Exit Function
+
+    headingText = Trim$(Mid$(value, 3, Len(value) - 4))
+    GetBoldHeading = Len(headingText) > 0
 End Function
 
 Private Function IsSectionTitle(ByVal value As String) As Boolean
